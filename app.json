@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Vidora",
+    "slug": "vidora",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0f0f0f",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0f0f0f"
+    },
+    "android": {
+      "package": "com.sandeep.vidora",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-video",
+        {
+          "supportsPictureInPicture": true,
+          "supportsBackgroundPlayback": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Vidora reads the videos on your phone so you can watch them offline.",
+          "savePhotosPermission": "Vidora does not save media.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": ["video"]
+        }
+      ]
+    ]
+  }
+}
