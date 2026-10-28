@@ -1,4 +1,4 @@
-# Vidora — offline video player with a YouTube-style UI
+# LowTube — offline video player with a YouTube-style UI
 
 React Native (Expo, TypeScript) Android app that plays the videos already stored on your phone. No network, no accounts. Likes, comments, history, Watch later and subscriptions are saved locally with AsyncStorage.
 

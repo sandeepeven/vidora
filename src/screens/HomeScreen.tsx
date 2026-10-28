@@ -6,6 +6,7 @@ import { Chips, EmptyState } from '../components/Common';
 import { Thumbnail } from '../components/Thumbnail';
 import { VideoCard } from '../components/VideoCard';
 import { useNav } from '../navigation/types';
+import { usePlayer } from '../state/PlayerContext';
 import { useLibrary } from '../state/LibraryContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
@@ -84,6 +85,7 @@ export default function HomeScreen() {
 
 function ShortsShelf({ items }: { items: Video[] }) {
   const nav = useNav();
+  const player = usePlayer();
   const { data } = useUserData();
   return (
     <View style={styles.shelf}>
@@ -98,7 +100,7 @@ function ShortsShelf({ items }: { items: Video[] }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}
         renderItem={({ item }) => (
-          <Pressable onPress={() => nav.push('Watch', { id: item.id })} style={styles.short}>
+          <Pressable onPress={() => player.open(item.id)} style={styles.short}>
             <Thumbnail video={item} style={styles.shortThumb} radius={10} showDuration={false} />
             <Text style={styles.shortTitle} numberOfLines={2}>{item.title}</Text>
             <Text style={styles.shortMeta}>{formatViews(data.views[item.id] ?? 0)}</Text>

@@ -16,6 +16,7 @@ import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
 import { isShort, type Video } from '../types';
 import { compactNumber } from '../utils/format';
+import { LOCAL_BUFFER } from '../utils/player';
 import { shareVideo } from '../utils/share';
 
 export default function ShortsScreen() {
@@ -31,6 +32,7 @@ export default function ShortsScreen() {
     const first = viewableItems[0];
     if (first?.index != null) setActive(first.index);
   }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
   if (!shorts.length) {
     return (
@@ -53,10 +55,15 @@ export default function ShortsScreen() {
           pagingEnabled
           showsVerticalScrollIndicator={false}
           snapToInterval={height}
+          // One short per swipe, however hard the fling.
+          disableIntervalMomentum
           decelerationRate="fast"
           getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
           onViewableItemsChanged={onViewable}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+          viewabilityConfig={viewabilityConfig}
+          // Android defaults this to true, which detaches the native video surfaces of
+          // off-screen items mid-scroll and crashes the app.
+          removeClippedSubviews={false}
           windowSize={3}
           initialNumToRender={1}
           maxToRenderPerBatch={2}
@@ -99,6 +106,7 @@ function ShortItem({
   const player = useVideoPlayer({ uri: video.uri }, (p) => {
     p.loop = true;
     p.timeUpdateEventInterval = 0.25;
+    p.bufferOptions = LOCAL_BUFFER;
   });
 
   useEffect(() => {
@@ -131,6 +139,7 @@ function ShortItem({
         style={StyleSheet.absoluteFill}
         contentFit={video.height > video.width ? 'cover' : 'contain'}
         nativeControls={false}
+        surfaceType="textureView"
       />
       <Pressable style={StyleSheet.absoluteFill} onPress={toggle}>
         {paused ? (

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNav } from '../navigation/types';
+import { usePlayer } from '../state/PlayerContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
 import type { Video } from '../types';
@@ -19,6 +20,7 @@ export function VideoMenuProvider({ children }: { children: React.ReactNode }) {
   const [video, setVideo] = useState<Video | null>(null);
   const nav = useNav();
   const toast = useToast();
+  const player = usePlayer();
   const { data, toggleWatchLater, removeHistory, setReaction } = useUserData();
   const open = useCallback((v: Video) => setVideo(v), []);
   const close = () => setVideo(null);
@@ -35,7 +37,7 @@ export function VideoMenuProvider({ children }: { children: React.ReactNode }) {
           label: 'Share',
           run: () => shareVideo(video).then((ok) => !ok && toast("Couldn't share this file")),
         },
-        { icon: 'person-circle-outline', label: 'Go to channel', run: () => nav.navigate('Channel', { id: video.channelId }) },
+        { icon: 'person-circle-outline', label: 'Go to channel', run: () => { player.minimize(); nav.navigate('Channel', { id: video.channelId }); } },
         {
           icon: 'trash-outline',
           label: 'Remove from watch history',

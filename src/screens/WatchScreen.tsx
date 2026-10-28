@@ -1,49 +1,197 @@
 import { Ionicons } from '@expo/vector-icons';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useEvent } from 'expo';
+import { useVideoPlayer, VideoView, type VideoPlayer } from 'expo-video';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  BackHandler,
+  FlatList,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+  type GestureResponderHandlers,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../components/Avatar';
 import { CommentsSheet } from '../components/CommentsSheet';
-import { EmptyState } from '../components/Common';
 import { SubscribeButton } from '../components/SubscribeButton';
 import { useToast } from '../components/Toast';
 import { CompactVideoRow } from '../components/VideoCard';
-import { useNav, type RootStackParamList } from '../navigation/types';
+import { useNav } from '../navigation/types';
 import { useLibrary } from '../state/LibraryContext';
+import { usePlayer } from '../state/PlayerContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
 import type { Video } from '../types';
 import { compactNumber, formatDate, formatDuration, formatViews, timeAgo } from '../utils/format';
+import { LOCAL_BUFFER } from '../utils/player';
 import { shareVideo } from '../utils/share';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Watch'>;
+const MINI_H = 64;
+const MINI_W = Math.round((MINI_H * 16) / 9);
+const clamp = (n: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, n));
 
-export default function WatchScreen({ route, navigation }: Props) {
+/** Animated styles for each part of the player, driven by the overlay's minimize progress. */
+type Frame = {
+  row: object;
+  videoBox: object;
+  mini: object;
+  miniProgress: object;
+  details: object;
+  panHandlers: GestureResponderHandlers;
+};
+
+/**
+ * The watch page lives above the navigator instead of inside it, so the video keeps
+ * playing when it's dragged down into the miniplayer and the user browses elsewhere.
+ * `progress` runs from 0 (full page) to 1 (miniplayer docked above the tab bar).
+ */
+export default function WatchOverlay({ bottomOffset, hideMini }: { bottomOffset: number; hideMini: boolean }) {
+  const { videoId, minimized, expand, minimize, close } = usePlayer();
+  const hidden = hideMini && minimized;
   const { byId } = useLibrary();
   const insets = useSafeAreaInsets();
-  const video = byId.get(route.params.id);
-  if (!video) {
-    return (
-      <View style={[styles.root, { paddingTop: insets.top }]}>
-        <EmptyState icon="alert-circle-outline" title="Video not found" body="It may have been moved or deleted." action="Go back" onAction={() => navigation.goBack()} />
-      </View>
-    );
-  }
-  return <Watch key={video.id} video={video} />;
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const progress = useRef(new Animated.Value(1)).current;
+  // Extra downward drag on the miniplayer, which dismisses it.
+  const drop = useRef(new Animated.Value(0)).current;
+  const video = videoId ? byId.get(videoId) : undefined;
+  const range = Math.max(1, size.h - bottomOffset - MINI_H);
+
+  const animateTo = useCallback(
+    (to: number) => Animated.spring(progress, { toValue: to, useNativeDriver: false, bounciness: 0, speed: 14 }).start(),
+    [progress],
+  );
+
+  // Slide up from the bottom on open, then follow minimize/expand requests from anywhere in the app.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (!videoId) {
+      wasOpen.current = false;
+      return;
+    }
+    if (!wasOpen.current) {
+      wasOpen.current = true;
+      progress.setValue(1);
+      drop.setValue(0);
+    }
+    animateTo(minimized ? 1 : 0);
+  }, [videoId, minimized, animateTo, progress, drop]);
+
+  useEffect(() => {
+    if (videoId && !video) close();
+  }, [videoId, video, close]);
+
+  // Android back shrinks the player rather than leaving the screen underneath.
+  useEffect(() => {
+    if (!videoId || minimized) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      minimize();
+      return true;
+    });
+    return () => sub.remove();
+  }, [videoId, minimized, minimize]);
+
+  const live = useRef({ minimized, range, expand, minimize, close });
+  live.current = { minimized, range, expand, minimize, close };
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        // Capture only clear vertical drags so taps still reach the player controls.
+        onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.5,
+        onPanResponderGrant: () => progress.stopAnimation(),
+        onPanResponderMove: (_, g) => {
+          const l = live.current;
+          if (l.minimized && g.dy > 0) drop.setValue(g.dy);
+          else progress.setValue(clamp((l.minimized ? 1 : 0) + g.dy / l.range));
+        },
+        onPanResponderRelease: (_, g) => {
+          const l = live.current;
+          if (l.minimized) {
+            if (g.dy > 30 || (g.dy > 0 && g.vy > 0.6)) {
+              Animated.timing(drop, { toValue: MINI_H * 1.5, duration: 160, useNativeDriver: false }).start(() => l.close());
+              return;
+            }
+            Animated.spring(drop, { toValue: 0, useNativeDriver: false, bounciness: 0 }).start();
+            if (g.dy < -l.range * 0.15 || g.vy < -0.6) {
+              l.expand();
+              animateTo(0);
+            } else animateTo(1);
+          } else if (g.dy > l.range * 0.25 || (g.dy > 0 && g.vy > 0.6)) {
+            l.minimize();
+            animateTo(1);
+          } else animateTo(0);
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(drop, { toValue: 0, useNativeDriver: false, bounciness: 0 }).start();
+          animateTo(live.current.minimized ? 1 : 0);
+        },
+      }),
+    [progress, drop, animateTo],
+  );
+
+  const { w: W, h: H } = size;
+  const videoH = Math.min((W * 9) / 16, H - insets.top);
+  const lerp = (a: number, b: number) => progress.interpolate({ inputRange: [0, 1], outputRange: [a, b] });
+  const frame: Frame = {
+    row: { flexDirection: 'row', paddingTop: lerp(insets.top, 0) },
+    videoBox: { width: lerp(W, MINI_W), height: lerp(videoH, MINI_H), backgroundColor: '#000' },
+    mini: { flex: 1, height: MINI_H, opacity: progress.interpolate({ inputRange: [0.6, 1], outputRange: [0, 1], extrapolate: 'clamp' }) },
+    miniProgress: { opacity: progress.interpolate({ inputRange: [0.9, 1], outputRange: [0, 1], extrapolate: 'clamp' }) },
+    details: {
+      position: 'absolute',
+      top: insets.top + videoH,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      opacity: progress.interpolate({ inputRange: [0, 0.4], outputRange: [1, 0], extrapolate: 'clamp' }),
+    },
+    panHandlers: pan.panHandlers,
+  };
+
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, hidden && styles.hidden]}
+      pointerEvents={hidden ? 'none' : 'box-none'}
+      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+    >
+      {video && H > 0 ? (
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              height: lerp(H, MINI_H),
+              opacity: drop.interpolate({ inputRange: [0, MINI_H * 1.5], outputRange: [1, 0], extrapolate: 'clamp' }),
+              transform: [{ translateY: Animated.add(lerp(0, range), drop) }],
+            },
+          ]}
+        >
+          <View style={{ height: H }}>
+            <Watch key={video.id} video={video} minimized={minimized} suspended={hidden} frame={frame} />
+          </View>
+          {minimized ? <View style={styles.miniBorder} pointerEvents="none" /> : null}
+        </Animated.View>
+      ) : null}
+    </View>
+  );
 }
 
-function Watch({ video }: { video: Video }) {
+function Watch({ video, minimized, suspended, frame }: { video: Video; minimized: boolean; suspended: boolean; frame: Frame }) {
   const insets = useSafeAreaInsets();
   const nav = useNav();
   const toast = useToast();
+  const playerCtx = usePlayer();
   const { videos, channelById } = useLibrary();
   const ud = useUserData();
   const { data } = ud;
   const [showDesc, setShowDesc] = useState(false);
   const [showComments, setShowComments] = useState(false);
-
+  const viewRef = useRef<VideoView>(null);
   const upNext = useMemo(() => {
     const others = videos.filter((v) => v.id !== video.id);
     const same = others.filter((v) => v.channelId === video.channelId);
@@ -61,9 +209,15 @@ function Watch({ video }: { video: Video }) {
   autoplayRef.current = data.autoplay;
 
   const player = useVideoPlayer({ uri: video.uri }, (p) => {
-    p.timeUpdateEventInterval = 1;
+    p.timeUpdateEventInterval = 0.5;
+    p.bufferOptions = LOCAL_BUFFER;
     p.play();
   });
+
+  // Shorts has its own audio, so the miniplayer steps aside while that tab is open.
+  useEffect(() => {
+    if (suspended) player.pause();
+  }, [suspended, player]);
 
   useEffect(() => {
     ud.addView(video.id);
@@ -86,7 +240,7 @@ function Watch({ video }: { video: Video }) {
         posRef.current = 0;
         ud.savePosition(video.id, 0, video.duration);
         const next = nextRef.current;
-        if (autoplayRef.current && next) nav.replace('Watch', { id: next.id });
+        if (autoplayRef.current && next) playerCtx.open(next.id, false);
       }),
     ];
     const saver = setInterval(() => ud.savePosition(video.id, posRef.current, video.duration), 10_000);
@@ -134,7 +288,13 @@ function Watch({ video }: { video: Video }) {
       ) : null}
 
       <View style={styles.channelRow}>
-        <Pressable style={styles.channelLeft} onPress={() => nav.push('Channel', { id: video.channelId })}>
+        <Pressable
+          style={styles.channelLeft}
+          onPress={() => {
+            playerCtx.minimize();
+            nav.push('Channel', { id: video.channelId });
+          }}
+        >
           <Avatar name={video.channelName} size={36} />
           <Text style={styles.channelName} numberOfLines={1}>{video.channelName}</Text>
           <Text style={styles.subs}>{channel ? `${channel.videoCount} videos` : ''}</Text>
@@ -200,29 +360,207 @@ function Watch({ video }: { video: Video }) {
   );
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.playerBox}>
-        <VideoView
-          player={player}
-          style={StyleSheet.absoluteFill}
-          contentFit="contain"
-          nativeControls
-          allowsFullscreen
-          allowsPictureInPicture
+    <View style={styles.root}>
+      <Animated.View style={frame.row} {...frame.panHandlers}>
+        <Animated.View style={frame.videoBox}>
+          <VideoView
+            ref={viewRef}
+            player={player}
+            style={StyleSheet.absoluteFill}
+            contentFit="contain"
+            nativeControls={false}
+            allowsFullscreen
+            allowsPictureInPicture
+          />
+          <PlayerControls
+            player={player}
+            duration={video.duration}
+            minimized={minimized}
+            onMinimize={playerCtx.minimize}
+            onExpand={playerCtx.expand}
+            viewRef={viewRef}
+          />
+        </Animated.View>
+        <Animated.View style={frame.mini} pointerEvents={minimized ? 'auto' : 'none'}>
+          <Pressable style={styles.miniBar} onPress={playerCtx.expand}>
+            <View style={styles.miniText}>
+              <Text style={styles.miniTitle} numberOfLines={1}>{video.title}</Text>
+              <Text style={styles.miniChannel} numberOfLines={1}>{video.channelName}</Text>
+            </View>
+            <PlayPause player={player} size={26} style={styles.miniBtn} />
+            <Pressable hitSlop={8} style={styles.miniBtn} onPress={playerCtx.close}>
+              <Ionicons name="close" size={26} color={colors.text} />
+            </Pressable>
+          </Pressable>
+        </Animated.View>
+        <Animated.View style={[styles.miniProgress, frame.miniProgress]} pointerEvents="none">
+          <TimeBar player={player} duration={video.duration} />
+        </Animated.View>
+      </Animated.View>
+      <Animated.View style={frame.details} pointerEvents={minimized ? 'none' : 'auto'}>
+        <FlatList
+          data={upNext}
+          keyExtractor={(v) => v.id}
+          ListHeaderComponent={header}
+          renderItem={({ item }) => <CompactVideoRow video={item} />}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+          initialNumToRender={6}
         />
-        <Pressable style={styles.collapse} hitSlop={10} onPress={() => nav.goBack()}>
-          <Ionicons name="chevron-down" size={24} color="#fff" />
-        </Pressable>
-      </View>
-      <FlatList
-        data={upNext}
-        keyExtractor={(v) => v.id}
-        ListHeaderComponent={header}
-        renderItem={({ item }) => <CompactVideoRow video={item} replace />}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-        initialNumToRender={6}
-      />
+      </Animated.View>
       <CommentsSheet videoId={video.id} visible={showComments} onClose={() => setShowComments(false)} />
+    </View>
+  );
+}
+
+/** Current playback position, refreshed on the player's timeUpdate events. */
+function useCurrentTime(player: VideoPlayer) {
+  const [time, setTime] = useState(player.currentTime);
+  useEffect(() => {
+    const sub = player.addListener('timeUpdate', ({ currentTime }) => setTime(currentTime));
+    return () => sub.remove();
+  }, [player]);
+  return time;
+}
+
+function PlayPause({ player, size, style }: { player: VideoPlayer; size: number; style?: object }) {
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+  return (
+    <Pressable hitSlop={8} style={style} onPress={() => (isPlaying ? player.pause() : player.play())}>
+      <Ionicons name={isPlaying ? 'pause' : 'play'} size={size} color={colors.text} />
+    </Pressable>
+  );
+}
+
+/** Thin progress line along the bottom of the miniplayer. */
+function TimeBar({ player, duration }: { player: VideoPlayer; duration: number }) {
+  const time = useCurrentTime(player);
+  return (
+    <View style={styles.track}>
+      <View style={[styles.fill, { width: `${duration ? clamp(time / duration) * 100 : 0}%` }]} />
+    </View>
+  );
+}
+
+function PlayerControls({
+  player,
+  duration,
+  minimized,
+  onMinimize,
+  onExpand,
+  viewRef,
+}: {
+  player: VideoPlayer;
+  duration: number;
+  minimized: boolean;
+  onMinimize: () => void;
+  onExpand: () => void;
+  viewRef: React.RefObject<VideoView | null>;
+}) {
+  const time = useCurrentTime(player);
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+  const [visible, setVisible] = useState(true);
+  const [poke, setPoke] = useState(0);
+  const total = player.duration || duration;
+
+  // Auto-hide like YouTube; any interaction restarts the countdown.
+  useEffect(() => {
+    if (!visible || !isPlaying || minimized) return;
+    const t = setTimeout(() => setVisible(false), 3000);
+    return () => clearTimeout(t);
+  }, [visible, isPlaying, minimized, poke]);
+
+  if (minimized) return <Pressable style={StyleSheet.absoluteFill} onPress={onExpand} />;
+
+  const act = (fn: () => void) => () => {
+    fn();
+    setPoke((n) => n + 1);
+  };
+  const seekBy = (d: number) => {
+    player.currentTime = clamp(player.currentTime + d, 0, total || Infinity);
+  };
+
+  return (
+    <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible((v) => !v)}>
+      {visible ? (
+        <View style={[StyleSheet.absoluteFill, styles.scrim]}>
+          <View style={styles.ctrlTop}>
+            <Pressable hitSlop={10} onPress={onMinimize}>
+              <Ionicons name="chevron-down" size={26} color="#fff" />
+            </Pressable>
+            <Pressable hitSlop={10} onPress={act(() => viewRef.current?.startPictureInPicture())}>
+              <Ionicons name="albums-outline" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={styles.ctrlCenter}>
+            <Pressable hitSlop={10} style={styles.ctrlRound} onPress={act(() => seekBy(-10))}>
+              <Ionicons name="play-back" size={24} color="#fff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={[styles.ctrlRound, styles.ctrlPlay]} onPress={act(() => (isPlaying ? player.pause() : player.play()))}>
+              <Ionicons name={isPlaying ? 'pause' : 'play'} size={36} color="#fff" />
+            </Pressable>
+            <Pressable hitSlop={10} style={styles.ctrlRound} onPress={act(() => seekBy(10))}>
+              <Ionicons name="play-forward" size={24} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={styles.ctrlBottom}>
+            <Text style={styles.ctrlTime}>
+              {formatDuration(time)} / {formatDuration(total)}
+            </Text>
+            <Pressable hitSlop={10} onPress={act(() => viewRef.current?.enterFullscreen())}>
+              <Ionicons name="expand" size={20} color="#fff" />
+            </Pressable>
+          </View>
+          <SeekBar
+            value={total ? time / total : 0}
+            onScrub={() => setPoke((n) => n + 1)}
+            onSeek={(f) => {
+              player.currentTime = f * total;
+            }}
+          />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function SeekBar({ value, onSeek, onScrub }: { value: number; onSeek: (fraction: number) => void; onScrub: () => void }) {
+  const [width, setWidth] = useState(1);
+  const [scrub, setScrub] = useState<number | null>(null);
+  const start = useRef(0);
+  const latest = useRef({ width, onSeek, onScrub, scrub });
+  latest.current = { width, onSeek, onScrub, scrub };
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        // Keep the drag even when it drifts vertically, so it isn't read as a minimize swipe.
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (e) => {
+          start.current = e.nativeEvent.locationX;
+          setScrub(clamp(start.current / latest.current.width));
+          latest.current.onScrub();
+        },
+        onPanResponderMove: (_, g) => {
+          setScrub(clamp((start.current + g.dx) / latest.current.width));
+          latest.current.onScrub();
+        },
+        onPanResponderRelease: (_, g) => {
+          latest.current.onSeek(clamp((start.current + g.dx) / latest.current.width));
+          setScrub(null);
+        },
+        onPanResponderTerminate: () => setScrub(null),
+      }),
+    [],
+  );
+
+  const shown = clamp(scrub ?? value);
+  return (
+    <View style={styles.seek} onLayout={(e) => setWidth(e.nativeEvent.layout.width || 1)} {...pan.panHandlers}>
+      <View style={styles.track}>
+        <View style={[styles.fill, { width: `${shown * 100}%` }]} />
+      </View>
+      <View style={[styles.thumb, { left: `${shown * 100}%` }, scrub != null && styles.thumbActive]} />
     </View>
   );
 }
@@ -247,9 +585,28 @@ function DescRow({ icon, label, value }: { icon: React.ComponentProps<typeof Ion
 }
 
 const styles = StyleSheet.create({
+  hidden: { opacity: 0 },
+  sheet: { position: 'absolute', left: 0, right: 0, top: 0, overflow: 'hidden', backgroundColor: colors.bg },
+  miniBorder: { position: 'absolute', left: 0, right: 0, top: 0, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   root: { flex: 1, backgroundColor: colors.bg },
-  playerBox: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
-  collapse: { position: 'absolute', top: 8, left: 8, padding: 4, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.35)' },
+  miniBar: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 12, backgroundColor: colors.surface },
+  miniText: { flex: 1, marginRight: 4 },
+  miniTitle: { color: colors.text, fontSize: 14, fontWeight: '500' },
+  miniChannel: { color: colors.sub, fontSize: 12, marginTop: 2 },
+  miniBtn: { paddingHorizontal: 10, height: MINI_H, justifyContent: 'center' },
+  miniProgress: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  scrim: { backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'space-between' },
+  ctrlTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 8 },
+  ctrlCenter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 36 },
+  ctrlRound: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  ctrlPlay: { width: 60, height: 60, borderRadius: 30 },
+  ctrlBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 6 },
+  ctrlTime: { color: '#fff', fontSize: 12, fontWeight: '500' },
+  seek: { height: 16, justifyContent: 'flex-end', marginBottom: -1 },
+  track: { height: 3, backgroundColor: 'rgba(255,255,255,0.3)' },
+  fill: { height: 3, backgroundColor: colors.accent },
+  thumb: { position: 'absolute', bottom: -4, width: 12, height: 12, marginLeft: -6, borderRadius: 6, backgroundColor: colors.accent },
+  thumbActive: { width: 18, height: 18, marginLeft: -9, bottom: -7, borderRadius: 9 },
   info: { paddingHorizontal: 12, paddingTop: 12 },
   title: { color: colors.text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   meta: { color: colors.sub, fontSize: 12, marginTop: 6 },

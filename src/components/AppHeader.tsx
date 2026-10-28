@@ -12,7 +12,7 @@ export function Logo() {
       <View style={styles.mark}>
         <Ionicons name="play" size={13} color="#fff" style={{ marginLeft: 2 }} />
       </View>
-      <Text style={styles.word}>Vidora</Text>
+      <Text style={styles.word}>LowTube</Text>
     </View>
   );
 }

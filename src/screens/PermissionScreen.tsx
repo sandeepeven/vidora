@@ -22,7 +22,7 @@ export default function PermissionScreen() {
       <Ionicons name="film-outline" size={72} color={colors.faint} />
       <Text style={styles.title}>Allow access to your videos</Text>
       <Text style={styles.body}>
-        Vidora plays the videos already stored on your phone — no internet needed. Nothing is uploaded anywhere.
+        LowTube plays the videos already stored on your phone — no internet needed. Nothing is uploaded anywhere.
       </Text>
       <Pressable style={styles.btn} onPress={canAskAgain ? requestAccess : () => Linking.openSettings()}>
         <Text style={styles.btnText}>{canAskAgain ? 'Allow access' : 'Open settings'}</Text>

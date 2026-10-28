@@ -5,7 +5,6 @@ export type PlaylistKind = 'history' | 'watchLater' | 'liked' | 'all';
 
 export type RootStackParamList = {
   Tabs: undefined;
-  Watch: { id: string };
   Search: undefined;
   Channel: { id: string };
   Playlist: { kind: PlaylistKind };

@@ -7,6 +7,7 @@ import { EmptyState } from '../components/Common';
 import { Thumbnail } from '../components/Thumbnail';
 import { CompactVideoRow } from '../components/VideoCard';
 import type { PlaylistKind, RootStackParamList } from '../navigation/types';
+import { usePlayer } from '../state/PlayerContext';
 import { useLibrary } from '../state/LibraryContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
@@ -21,6 +22,7 @@ const TITLES: Record<PlaylistKind, string> = {
 
 export default function PlaylistScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Playlist'>) {
   const insets = useSafeAreaInsets();
+  const player = usePlayer();
   const { kind } = route.params;
   const { byId, videos } = useLibrary();
   const { data } = useUserData();
@@ -53,7 +55,7 @@ export default function PlaylistScreen({ route, navigation }: NativeStackScreenP
             <Text style={styles.title}>{TITLES[kind]}</Text>
             <Text style={styles.meta}>{data.profileName} · {list.length} videos · Offline</Text>
             {list.length ? (
-              <Pressable style={styles.play} onPress={() => navigation.push('Watch', { id: list[0].id })}>
+              <Pressable style={styles.play} onPress={() => player.open(list[0].id)}>
                 <Ionicons name="play" size={18} color={colors.bg} />
                 <Text style={styles.playText}>Play all</Text>
               </Pressable>

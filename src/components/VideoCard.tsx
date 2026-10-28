@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNav } from '../navigation/types';
+import { usePlayer } from '../state/PlayerContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
 import type { Video } from '../types';
@@ -13,12 +14,13 @@ import { useVideoMenu } from './VideoMenu';
 /** Full-width home-feed card. */
 export const VideoCard = memo(function VideoCard({ video }: { video: Video }) {
   const nav = useNav();
+  const player = usePlayer();
   const menu = useVideoMenu();
   const { data } = useUserData();
   const pos = data.positions[video.id] ?? 0;
 
   return (
-    <Pressable onPress={() => nav.push('Watch', { id: video.id })} style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}>
+    <Pressable onPress={() => player.open(video.id)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}>
       <Thumbnail video={video} style={styles.thumb} progress={video.duration ? pos / video.duration : 0} />
       <View style={styles.row}>
         <Pressable hitSlop={6} onPress={() => nav.push('Channel', { id: video.channelId })}>
@@ -42,17 +44,15 @@ export const VideoCard = memo(function VideoCard({ video }: { video: Video }) {
 export const CompactVideoRow = memo(function CompactVideoRow({
   video,
   onPress,
-  replace,
 }: {
   video: Video;
   onPress?: () => void;
-  replace?: boolean;
 }) {
-  const nav = useNav();
+  const player = usePlayer();
   const menu = useVideoMenu();
   const { data } = useUserData();
   const pos = data.positions[video.id] ?? 0;
-  const go = onPress ?? (() => (replace ? nav.replace('Watch', { id: video.id }) : nav.push('Watch', { id: video.id })));
+  const go = onPress ?? (() => player.open(video.id));
 
   return (
     <Pressable onPress={go} style={({ pressed }) => [styles.compact, pressed && { backgroundColor: colors.surface }]}>

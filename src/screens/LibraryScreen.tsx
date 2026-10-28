@@ -8,6 +8,7 @@ import { Thumbnail } from '../components/Thumbnail';
 import { useToast } from '../components/Toast';
 import { clearThumbCache } from '../data/thumbs';
 import { useNav, type PlaylistKind } from '../navigation/types';
+import { usePlayer } from '../state/PlayerContext';
 import { useLibrary } from '../state/LibraryContext';
 import { useUserData } from '../state/UserDataContext';
 import { colors } from '../theme';
@@ -18,6 +19,7 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export default function LibraryScreen() {
   const nav = useNav();
+  const player = usePlayer();
   const toast = useToast();
   const { byId, videos, channels, refresh } = useLibrary();
   const ud = useUserData();
@@ -68,7 +70,7 @@ export default function LibraryScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 12, gap: 10 }}
             renderItem={({ item }) => (
-              <Pressable style={{ width: 160 }} onPress={() => nav.push('Watch', { id: item.id })}>
+              <Pressable style={{ width: 160 }} onPress={() => player.open(item.id)}>
                 <Thumbnail
                   video={item}
                   style={{ width: 160, aspectRatio: 16 / 9 }}

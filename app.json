@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Vidora",
+    "name": "LowTube",
     "slug": "vidora",
     "version": "1.0.0",
     "orientation": "default",
@@ -15,7 +15,9 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ]
     },
     "plugins": [
@@ -29,12 +31,20 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Vidora reads the videos on your phone so you can watch them offline.",
-          "savePhotosPermission": "Vidora does not save media.",
+          "photosPermission": "LowTube reads the videos on your phone so you can watch them offline.",
+          "savePhotosPermission": "LowTube does not save media.",
           "isAccessMediaLocationEnabled": false,
-          "granularPermissions": ["video"]
+          "granularPermissions": [
+            "video"
+          ]
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e7e50692-0176-42c9-8075-c83fa2dc7413"
+      }
+    }
   }
 }

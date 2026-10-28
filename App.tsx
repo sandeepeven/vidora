@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { DarkTheme, NavigationContainer, type Theme } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer, useNavigationContainerRef, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from './src/components/Avatar';
 import { ToastProvider, useToast } from './src/components/Toast';
 import { VideoMenuProvider } from './src/components/VideoMenu';
@@ -18,13 +18,17 @@ import PlaylistScreen from './src/screens/PlaylistScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import ShortsScreen from './src/screens/ShortsScreen';
 import SubscriptionsScreen from './src/screens/SubscriptionsScreen';
-import WatchScreen from './src/screens/WatchScreen';
+import WatchOverlay from './src/screens/WatchScreen';
 import { LibraryProvider, useLibrary } from './src/state/LibraryContext';
+import { PlayerProvider } from './src/state/PlayerContext';
 import { UserDataProvider, useUserData } from './src/state/UserDataContext';
 import { colors } from './src/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
+const TAB_ROUTES = ['Home', 'Shorts', 'Create', 'Subscriptions', 'You'];
+/** React Navigation's default bottom tab bar height, before the safe-area inset. */
+const TAB_BAR_HEIGHT = 49;
 
 const navTheme: Theme = {
   ...DarkTheme,
@@ -64,7 +68,7 @@ function Tabs() {
         listeners={{
           tabPress: (e) => {
             e.preventDefault();
-            toast('Uploading is off — Vidora only plays videos already on your phone');
+            toast('Uploading is off — LowTube only plays videos already on your phone');
           },
         }}
         options={{
@@ -98,20 +102,29 @@ function Tabs() {
 
 function Root() {
   const { status } = useLibrary();
+  const insets = useSafeAreaInsets();
+  const navRef = useNavigationContainerRef<RootStackParamList>();
+  const [route, setRoute] = useState<string>();
+  const syncRoute = () => setRoute(navRef.getCurrentRoute()?.name);
   if (status === 'checking' || status === 'loading') return <LoadingScreen />;
   if (status === 'denied') return <PermissionScreen />;
   return (
-    <NavigationContainer theme={navTheme}>
-      <VideoMenuProvider>
-        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-          <Stack.Screen name="Tabs" component={Tabs} />
-          <Stack.Screen name="Watch" component={WatchScreen} options={{ animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="Search" component={SearchScreen} options={{ animation: 'fade' }} />
-          <Stack.Screen name="Channel" component={ChannelScreen} />
-          <Stack.Screen name="Playlist" component={PlaylistScreen} />
-        </Stack.Navigator>
-      </VideoMenuProvider>
-    </NavigationContainer>
+    <PlayerProvider>
+      <NavigationContainer ref={navRef} theme={navTheme} onReady={syncRoute} onStateChange={syncRoute}>
+        <VideoMenuProvider>
+          <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+            <Stack.Screen name="Tabs" component={Tabs} />
+            <Stack.Screen name="Search" component={SearchScreen} options={{ animation: 'fade' }} />
+            <Stack.Screen name="Channel" component={ChannelScreen} />
+            <Stack.Screen name="Playlist" component={PlaylistScreen} />
+          </Stack.Navigator>
+          <WatchOverlay
+            bottomOffset={route && TAB_ROUTES.includes(route) ? TAB_BAR_HEIGHT + insets.bottom : insets.bottom}
+            hideMini={route === 'Shorts'}
+          />
+        </VideoMenuProvider>
+      </NavigationContainer>
+    </PlayerProvider>
   );
 }
 
