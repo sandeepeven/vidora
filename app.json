@@ -4,6 +4,7 @@
     "slug": "vidora",
     "version": "1.0.0",
     "orientation": "default",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0f0f0f",
     "newArchEnabled": true,
@@ -12,6 +13,10 @@
     },
     "android": {
       "package": "com.sandeep.vidora",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FEFEFE"
+      },
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.READ_MEDIA_VIDEO",

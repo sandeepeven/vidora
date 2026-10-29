@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../components/Avatar';
 import { CommentsSheet } from '../components/CommentsSheet';
+import { SpeedHold } from '../components/SpeedHold';
 import { SubscribeButton } from '../components/SubscribeButton';
 import { useToast } from '../components/Toast';
 import { CompactVideoRow } from '../components/VideoCard';
@@ -480,7 +481,7 @@ function PlayerControls({
   };
 
   return (
-    <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible((v) => !v)}>
+    <SpeedHold player={player} onTap={() => setVisible((v) => !v)}>
       {visible ? (
         <View style={[StyleSheet.absoluteFill, styles.scrim]}>
           <View style={styles.ctrlTop}>
@@ -519,7 +520,7 @@ function PlayerControls({
           />
         </View>
       ) : null}
-    </Pressable>
+    </SpeedHold>
   );
 }
 

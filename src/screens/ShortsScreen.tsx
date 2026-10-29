@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../components/Avatar';
 import { CommentsSheet } from '../components/CommentsSheet';
 import { EmptyState } from '../components/Common';
+import { SpeedHold } from '../components/SpeedHold';
 import { SubscribeButton } from '../components/SubscribeButton';
 import { useToast } from '../components/Toast';
 import { useVideoMenu } from '../components/VideoMenu';
@@ -26,6 +27,8 @@ export default function ShortsScreen() {
   const [height, setHeight] = useState(0);
   const [active, setActive] = useState(0);
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
+  // While 2x is held the list stays put, so pulling down locks speed instead of scrolling.
+  const [holding, setHolding] = useState(false);
   const shorts = useMemo(() => videos.filter(isShort), [videos]);
 
   const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -53,6 +56,7 @@ export default function ShortsScreen() {
           data={shorts}
           keyExtractor={(v) => v.id}
           pagingEnabled
+          scrollEnabled={!holding}
           showsVerticalScrollIndicator={false}
           snapToInterval={height}
           // One short per swipe, however hard the fling.
@@ -73,6 +77,7 @@ export default function ShortsScreen() {
               height={height}
               active={focused && index === active}
               onComments={() => setCommentsFor(item.id)}
+              onHoldChange={setHolding}
             />
           )}
         />
@@ -90,12 +95,15 @@ function ShortItem({
   height,
   active,
   onComments,
+  onHoldChange,
 }: {
   video: Video;
   height: number;
   active: boolean;
   onComments: () => void;
+  onHoldChange: (holding: boolean) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const ud = useUserData();
   const toast = useToast();
   const menu = useVideoMenu();
@@ -141,13 +149,13 @@ function ShortItem({
         nativeControls={false}
         surfaceType="textureView"
       />
-      <Pressable style={StyleSheet.absoluteFill} onPress={toggle}>
+      <SpeedHold player={player} onTap={toggle} lockable enabled={active} onHoldChange={onHoldChange} badgeTop={insets.top + 52}>
         {paused ? (
-          <View style={styles.pauseIcon}>
+          <View style={styles.pauseIcon} pointerEvents="none">
             <Ionicons name="play" size={44} color="#fff" />
           </View>
         ) : null}
-      </Pressable>
+      </SpeedHold>
 
       <View style={[styles.side, { bottom: 24 }]}>
         <SideBtn
