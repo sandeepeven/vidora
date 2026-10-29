@@ -2,7 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View, ViewToken } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ViewToken,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '../components/Avatar';
 import { CommentsSheet } from '../components/CommentsSheet';
@@ -37,6 +46,23 @@ export default function ShortsScreen() {
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
+  // disableIntervalMomentum stops hard flings skipping shorts, but on its own it ignores
+  // flick speed and snaps back unless the drag passed halfway. Pick the page ourselves:
+  // any deliberate drag or flick moves exactly one short.
+  const listRef = useRef<FlatList<Video>>(null);
+  const dragFrom = useRef(0);
+  const onDragStart = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    dragFrom.current = Math.round(e.nativeEvent.contentOffset.y / height);
+  };
+  const onDragEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, velocity } = e.nativeEvent;
+    const dy = contentOffset.y - dragFrom.current * height;
+    const flicked = Math.abs(velocity?.y ?? 0) > 0.3 && Math.abs(dy) > 8;
+    const dir = Math.abs(dy) > height * 0.12 || flicked ? Math.sign(dy) : 0;
+    const target = Math.max(0, Math.min(shorts.length - 1, dragFrom.current + dir));
+    listRef.current?.scrollToOffset({ offset: target * height, animated: true });
+  };
+
   if (!shorts.length) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -53,6 +79,7 @@ export default function ShortsScreen() {
     <View style={styles.root} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
       {height > 0 ? (
         <FlatList
+          ref={listRef}
           data={shorts}
           keyExtractor={(v) => v.id}
           pagingEnabled
@@ -61,6 +88,8 @@ export default function ShortsScreen() {
           snapToInterval={height}
           // One short per swipe, however hard the fling.
           disableIntervalMomentum
+          onScrollBeginDrag={onDragStart}
+          onScrollEndDrag={onDragEnd}
           decelerationRate="fast"
           getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
           onViewableItemsChanged={onViewable}
